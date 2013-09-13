@@ -23,9 +23,11 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 import org.msgpack.template.FieldOption;
+import org.msgpack.template.SerializationStyle;
 
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Message {
     FieldOption value() default FieldOption.DEFAULT;
+    SerializationStyle style() default SerializationStyle.ARRAY;
 }

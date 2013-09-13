@@ -53,7 +53,7 @@ public abstract class BuildContext<T extends FieldEntry> {
         this.director = director;
     }
 
-    protected Template build(final String className) {
+    protected Template build(final String className, boolean mapStyle) {
         try {
             reset(className, false);
             LOG.fine(String.format("started generating template class %s for original class %s",
@@ -61,8 +61,8 @@ public abstract class BuildContext<T extends FieldEntry> {
             buildClass();
             buildConstructor();
             buildMethodInit();
-            buildWriteMethod();
-            buildReadMethod();
+            buildWriteMethod(mapStyle);
+            buildReadMethod(mapStyle);
             LOG.fine(String.format("finished generating template class %s for original class %s",
                     new Object[] { tmplCtClass.getName(), className }));
             return buildInstance(createClass());
@@ -100,10 +100,10 @@ public abstract class BuildContext<T extends FieldEntry> {
             throws NoSuchMethodException, InstantiationException,
             IllegalAccessException, InvocationTargetException;
 
-    protected void buildWriteMethod() throws CannotCompileException, NotFoundException {
+    protected void buildWriteMethod(boolean mapStyle) throws CannotCompileException, NotFoundException {
         LOG.fine(String.format("started generating write method in template class %s",
                 new Object[] { tmplCtClass.getName() }));
-        String mbody = buildWriteMethodBody();
+        String mbody = buildWriteMethodBody(mapStyle);
         int mod = javassist.Modifier.PUBLIC;
         CtClass returnType = CtClass.voidType;
         String mname = "write";
@@ -123,12 +123,12 @@ public abstract class BuildContext<T extends FieldEntry> {
                 new Object[] { tmplCtClass.getName() }));
     }
 
-    protected abstract String buildWriteMethodBody();
+    protected abstract String buildWriteMethodBody(boolean mapStyle);
 
-    protected void buildReadMethod() throws CannotCompileException, NotFoundException {
+    protected void buildReadMethod(boolean mapStyle) throws CannotCompileException, NotFoundException {
         LOG.fine(String.format("started generating read method in template class %s",
                 new Object[] { tmplCtClass.getName() }));
-        String mbody = buildReadMethodBody();
+        String mbody = buildReadMethodBody(mapStyle);
         int mod = javassist.Modifier.PUBLIC;
         CtClass returnType = director.getCtClass(Object.class.getName());
         String mname = "read";
@@ -148,7 +148,7 @@ public abstract class BuildContext<T extends FieldEntry> {
                 new Object[] { tmplCtClass.getName() }));
     }
 
-    protected abstract String buildReadMethodBody();
+    protected abstract String buildReadMethodBody(boolean mapStyle);
 
     protected Class<?> createClass() throws CannotCompileException {
         return (Class<?>) tmplCtClass.toClass(director.getClassLoader(), getClass().getProtectionDomain());
@@ -207,14 +207,14 @@ public abstract class BuildContext<T extends FieldEntry> {
     protected abstract void writeTemplate(Class<?> targetClass, T[] entries,
             Template[] templates, String directoryName);
 
-    protected void write(final String className, final String directoryName) {
+    protected void write(final String className, final String directoryName, boolean mapStyle) {
         try {
             reset(className, true);
             buildClass();
             buildConstructor();
             buildMethodInit();
-            buildWriteMethod();
-            buildReadMethod();
+            buildWriteMethod(mapStyle);
+            buildReadMethod(mapStyle);
             saveClass(directoryName);
         } catch (Exception e) {
             String code = getBuiltString();

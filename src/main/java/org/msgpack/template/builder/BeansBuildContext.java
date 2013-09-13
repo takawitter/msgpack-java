@@ -20,14 +20,17 @@ package org.msgpack.template.builder;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 
-import org.msgpack.*;
-import org.msgpack.template.*;
-
 import javassist.CannotCompileException;
 import javassist.CtClass;
 import javassist.CtConstructor;
 import javassist.CtNewConstructor;
 import javassist.NotFoundException;
+
+import org.msgpack.MessageTypeException;
+import org.msgpack.annotation.Beans;
+import org.msgpack.annotation.MessagePackBeans;
+import org.msgpack.template.SerializationStyle;
+import org.msgpack.template.Template;
 
 @SuppressWarnings("rawtypes")
 public class BeansBuildContext extends BuildContext<BeansFieldEntry> {
@@ -49,7 +52,20 @@ public class BeansBuildContext extends BuildContext<BeansFieldEntry> {
         this.templates = templates;
         this.origClass = targetClass;
         this.origName = origClass.getName();
-        return build(origName);
+        
+        return build(origName, isMapStyle(targetClass));
+    }
+
+    private boolean isMapStyle(Class<?> targetClass){
+        Beans ba = targetClass.getAnnotation(Beans.class);
+        if(ba != null){
+            return ba.style().equals(SerializationStyle.MAP);
+        }
+        MessagePackBeans mba = targetClass.getAnnotation(MessagePackBeans.class);
+        if(mba != null){
+            return mba.style().equals(SerializationStyle.MAP);
+        }
+        return false;
     }
 
     protected void setSuperClass() throws CannotCompileException, NotFoundException {
@@ -79,7 +95,7 @@ public class BeansBuildContext extends BuildContext<BeansFieldEntry> {
     }
 
     @Override
-    protected String buildWriteMethodBody() {
+    protected String buildWriteMethodBody(boolean mapStyle) {
         resetStringBuilder();
         buildString("{");
 
@@ -92,7 +108,11 @@ public class BeansBuildContext extends BuildContext<BeansFieldEntry> {
         buildString("}");
 
         buildString("%s _$$_t = (%s)$2;", origName, origName);
-        buildString("$1.writeArrayBegin(%d);", entries.length);
+        if(mapStyle){
+            buildString("$1.writeMapBegin(%d);", entries.length);
+        } else{
+            buildString("$1.writeArrayBegin(%d);", entries.length);
+        }
 
         for (int i = 0; i < entries.length; i++) {
             BeansFieldEntry e = entries[i];
@@ -100,6 +120,7 @@ public class BeansBuildContext extends BuildContext<BeansFieldEntry> {
                 buildString("$1.writeNil();");
                 continue;
             }
+            if(mapStyle) buildString("   $1.write(\"%s\");", e.getName());
             Class<?> type = e.getType();
             if (type.isPrimitive()) {
                 buildString("$1.%s(_$$_t.%s());", primitiveWriteName(type), e.getGetterName());
@@ -116,13 +137,17 @@ public class BeansBuildContext extends BuildContext<BeansFieldEntry> {
             }
         }
 
-        buildString("$1.writeArrayEnd();");
+        if(mapStyle){
+            buildString("$1.writeMapEnd();");
+        } else{
+            buildString("$1.writeArrayEnd();");
+        }
         buildString("}");
         return getBuiltString();
     }
 
     @Override
-    protected String buildReadMethodBody() {
+    protected String buildReadMethodBody(boolean mapStyle) {
         resetStringBuilder();
         buildString("{ ");
 
@@ -137,10 +162,17 @@ public class BeansBuildContext extends BuildContext<BeansFieldEntry> {
         buildString("  _$$_t = (%s)$2;", origName);
         buildString("}");
 
-        buildString("$1.readArrayBegin();");
+        if(mapStyle){
+            buildString("$1.readMapBegin();");
+        } else{
+            buildString("$1.readArrayBegin();");
+        }
 
         for (int i = 0; i < entries.length; i++) {
             BeansFieldEntry e = entries[i];
+            if(mapStyle){
+                buildString("$1.readString();");
+            }
 
             if (!e.isAvailable()) {
                 buildString("$1.skip();"); // TODO #MN
@@ -167,7 +199,11 @@ public class BeansBuildContext extends BuildContext<BeansFieldEntry> {
             }
         }
 
-        buildString("$1.readArrayEnd();");
+        if(mapStyle){
+            buildString("$1.readMapEnd();");
+        } else{
+            buildString("$1.readArrayEnd();");
+        }
         buildString("return _$$_t;");
 
         buildString("}");

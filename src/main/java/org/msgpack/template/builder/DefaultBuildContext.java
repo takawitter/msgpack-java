@@ -22,16 +22,19 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
 
-import org.msgpack.*;
-import org.msgpack.packer.Packer;
-import org.msgpack.template.*;
-import org.msgpack.unpacker.Unpacker;
-
 import javassist.CannotCompileException;
 import javassist.CtClass;
 import javassist.CtConstructor;
 import javassist.CtNewConstructor;
 import javassist.NotFoundException;
+
+import org.msgpack.MessageTypeException;
+import org.msgpack.annotation.Message;
+import org.msgpack.annotation.MessagePackMessage;
+import org.msgpack.packer.Packer;
+import org.msgpack.template.SerializationStyle;
+import org.msgpack.template.Template;
+import org.msgpack.unpacker.Unpacker;
 
 @SuppressWarnings({ "rawtypes", "unchecked" })
 public class DefaultBuildContext extends BuildContext<FieldEntry> {
@@ -47,13 +50,25 @@ public class DefaultBuildContext extends BuildContext<FieldEntry> {
         super(director);
     }
 
-    public Template buildTemplate(Class targetClass, FieldEntry[] entries,
+    public Template buildTemplate(Class<?> targetClass, FieldEntry[] entries,
             Template[] templates) {
         this.entries = entries;
         this.templates = templates;
         this.origClass = targetClass;
         this.origName = origClass.getName();
-        return build(origName);
+        return build(origName, isMapStyle(targetClass));
+    }
+
+    private boolean isMapStyle(Class<?> targetClass){
+        Message ma = targetClass.getAnnotation(Message.class);
+        if(ma != null){
+            return ma.style().equals(SerializationStyle.MAP);
+        }
+        MessagePackMessage mma = targetClass.getAnnotation(MessagePackMessage.class);
+        if(mma != null){
+            return mma.style().equals(SerializationStyle.MAP);
+        }
+        return false;
     }
 
     protected void setSuperClass() throws CannotCompileException, NotFoundException {
@@ -83,7 +98,7 @@ public class DefaultBuildContext extends BuildContext<FieldEntry> {
     protected void buildMethodInit() {
     }
 
-    protected String buildWriteMethodBody() {
+    protected String buildWriteMethodBody(boolean mapStyle) {
         resetStringBuilder();
         buildString("\n{\n");
 
@@ -96,10 +111,15 @@ public class DefaultBuildContext extends BuildContext<FieldEntry> {
         buildString("  }\n");
 
         buildString("  %s _$$_t = (%s) $2;\n", origName, origName);
-        buildString("  $1.writeArrayBegin(%d);\n", entries.length);
+        if(mapStyle){
+            buildString("  $1.writeMapBegin(%d);\n", entries.length);
+        } else{
+            buildString("  $1.writeArrayBegin(%d);\n", entries.length);
+        }
 
         for (int i = 0; i < entries.length; i++) {
             FieldEntry e = entries[i];
+            if(mapStyle) buildString("   $1.write(\"%s\");", e.getName());
             if (!e.isAvailable()) {
                 buildString("  $1.writeNil();\n");
                 continue;
@@ -142,7 +162,11 @@ public class DefaultBuildContext extends BuildContext<FieldEntry> {
             }
         }
 
-        buildString("  $1.writeArrayEnd();\n");
+        if(mapStyle){
+            buildString("  $1.writeMapEnd();\n");
+        } else{
+            buildString("  $1.writeArrayEnd();\n");
+        }
         buildString("}\n");
         return getBuiltString();
     }
@@ -180,9 +204,10 @@ public class DefaultBuildContext extends BuildContext<FieldEntry> {
         }
     }
 
-    protected String buildReadMethodBody() {
+    protected String buildReadMethodBody(boolean mapStyle) {
         resetStringBuilder();
         buildString("\n{\n");
+        buildString("  String name = null;\n");
 
         buildString("  if (!$3 && $1.trySkipNil()) {\n");
         buildString("    return null;\n");
@@ -194,11 +219,16 @@ public class DefaultBuildContext extends BuildContext<FieldEntry> {
         buildString("  } else {\n");
         buildString("    _$$_t = (%s) $2;\n", origName);
         buildString("  }\n");
-        buildString("  $1.readArrayBegin();\n");
+        if(mapStyle){
+            buildString("  $1.readMapBegin();\n");
+        } else{
+            buildString("  $1.readArrayBegin();\n");
+        }
 
         int i;
         for (i = 0; i < entries.length; i++) {
             FieldEntry e = entries[i];
+            buildString("  name = $1.readString();\n");
             if (!e.isAvailable()) {
                 buildString("  $1.skip();\n");
                 continue;
@@ -238,7 +268,11 @@ public class DefaultBuildContext extends BuildContext<FieldEntry> {
             }
         }
 
-        buildString("  $1.readArrayEnd();\n");
+        if(mapStyle){
+            buildString("  $1.readMapEnd();\n");
+        } else{
+            buildString("  $1.readArrayEnd();\n");
+        }
         buildString("  return _$$_t;\n");
 
         buildString("}\n");
@@ -272,7 +306,7 @@ public class DefaultBuildContext extends BuildContext<FieldEntry> {
         this.templates = templates;
         this.origClass = targetClass;
         this.origName = origClass.getName();
-        write(origName, directoryName);
+        write(origName, directoryName, isMapStyle(targetClass));
     }
 
     @Override

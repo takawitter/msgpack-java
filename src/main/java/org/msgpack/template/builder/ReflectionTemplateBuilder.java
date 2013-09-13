@@ -25,9 +25,12 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.msgpack.MessageTypeException;
+import org.msgpack.annotation.Beans;
+import org.msgpack.annotation.MessagePackBeans;
 import org.msgpack.packer.Packer;
-import org.msgpack.template.Template;
 import org.msgpack.template.AbstractTemplate;
+import org.msgpack.template.SerializationStyle;
+import org.msgpack.template.Template;
 import org.msgpack.template.TemplateRegistry;
 import org.msgpack.unpacker.Unpacker;
 
@@ -41,6 +44,10 @@ public class ReflectionTemplateBuilder extends AbstractTemplateBuilder {
 
         ReflectionFieldTemplate(final FieldEntry entry) {
             this.entry = entry;
+        }
+
+        String getName(){
+            return entry.getName();
         }
 
         void setNil(Object v) {
@@ -80,9 +87,24 @@ public class ReflectionTemplateBuilder extends AbstractTemplateBuilder {
 
         protected ReflectionFieldTemplate[] templates;
 
+        private boolean mapStyle;
+
         protected ReflectionClassTemplate(Class<T> targetClass, ReflectionFieldTemplate[] templates) {
             this.targetClass = targetClass;
             this.templates = templates;
+            this.mapStyle = isMapStyle(targetClass);
+        }
+
+        private boolean isMapStyle(Class<?> targetClass){
+            Beans ba = targetClass.getAnnotation(Beans.class);
+            if(ba != null){
+                return ba.style().equals(SerializationStyle.MAP);
+            }
+            MessagePackBeans mba = targetClass.getAnnotation(MessagePackBeans.class);
+            if(mba != null){
+                return mba.style().equals(SerializationStyle.MAP);
+            }
+            return false;
         }
 
         @Override
@@ -96,8 +118,13 @@ public class ReflectionTemplateBuilder extends AbstractTemplateBuilder {
                 return;
             }
             try {
-                packer.writeArrayBegin(templates.length);
+                if(mapStyle){
+                    packer.writeMapBegin(templates.length);
+                } else{
+                    packer.writeArrayBegin(templates.length);
+                }
                 for (ReflectionFieldTemplate tmpl : templates) {
+                    packer.write(tmpl.getName());
                     if (!tmpl.entry.isAvailable()) {
                         packer.writeNil();
                         continue;
@@ -113,7 +140,11 @@ public class ReflectionTemplateBuilder extends AbstractTemplateBuilder {
                         tmpl.write(packer, obj, true);
                     }
                 }
-                packer.writeArrayEnd();
+                if(mapStyle){
+                    packer.writeMapEnd();
+                } else{
+                    packer.writeArrayEnd();
+                }
             } catch (IOException e) {
                 throw e;
             } catch (Exception e) {
@@ -132,9 +163,14 @@ public class ReflectionTemplateBuilder extends AbstractTemplateBuilder {
                     to = targetClass.newInstance();
                 }
 
-                unpacker.readArrayBegin();
+                if(mapStyle){
+                    unpacker.readMapBegin();
+                } else{
+                    unpacker.readArrayBegin();
+                }
                 for (int i = 0; i < templates.length; i++) {
                     ReflectionFieldTemplate tmpl = templates[i];
+                    if(mapStyle) unpacker.readString();
                     if (!tmpl.entry.isAvailable()) {
                         unpacker.skip();
                     } else if (tmpl.entry.isOptional() && unpacker.trySkipNil()) {
@@ -144,7 +180,11 @@ public class ReflectionTemplateBuilder extends AbstractTemplateBuilder {
                     }
                 }
 
-                unpacker.readArrayEnd();
+                if(mapStyle){
+                    unpacker.readMapEnd();
+                } else{
+                    unpacker.readArrayEnd();
+                }
                 return to;
             } catch (IOException e) {
                 throw e;

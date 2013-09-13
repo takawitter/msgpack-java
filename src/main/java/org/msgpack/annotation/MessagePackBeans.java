@@ -23,6 +23,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 import org.msgpack.template.FieldOption;
+import org.msgpack.template.SerializationStyle;
 
 /**
  * Annotation for java beans class
@@ -34,4 +35,5 @@ import org.msgpack.template.FieldOption;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface MessagePackBeans {
     FieldOption value() default FieldOption.DEFAULT;
+    SerializationStyle style() default SerializationStyle.ARRAY;
 }
